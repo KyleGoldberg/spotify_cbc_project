@@ -14,6 +14,7 @@ from selenium import webdriver
 from selenium.webdriver.chrome.options import Options  
 from difflib import SequenceMatcher
 import pandas as pd
+from datetime import datetime
 
 #function to add some string distance help for misspellings of program names
 def similar(a,b):
@@ -76,23 +77,42 @@ def scrape_cbc_weblogs(program_name):
     song_title_list = data_df.drop(data_df[data_df.attr_type == 'Artist'].index).drop(columns = 'attr_type').reset_index(drop = True)
     song_artist_list = data_df.drop(data_df[data_df.attr_type == 'Title'].index).drop(columns = 'attr_type').reset_index(drop = True)
     
-    data_df = pd.concat([song_title_list,song_artist_list],axis=1)
-    data_df.columns = ['title','artist']
-    
+    elem = driver.find_elements_by_xpath('//*[contains(concat( " ", @class, " " ), concat( " ", "playlog__programs__program__broadcasttime", " " ))]')
+    #times come in with poor formatting need to adjust into a full datetime
+    times_list = list()
+    for i in range(len(elem)):
+        if(elem[i].text != ''):
+            if(len(elem[i].text)==3):
+                z = '0'+elem[i].text[:1]+':00'+elem[i].text[1:3]
+            elif(len(elem[i].text) == 4):
+                z = elem[i].text[:2]+':00'+elem[i].text[2:4]
+            elif(len(elem[i].text) == 6):
+                z = '0'+elem[i].text
+            else:
+                z = elem[i].text
+            z2 = str(datetime.today().strftime('%Y-%m-%d')) +' '+ z
+            app = datetime.strptime(z2.upper(),'%Y-%m-%d %I:%M%p').strftime('%Y-%m-%d %H:%M:%S')
+            times_list.append(app)
+    times_list = pd.DataFrame(times_list)
+    times_list.columns = ['timestamp']
+    data_df = pd.concat([song_title_list,song_artist_list,times_list],axis=1)
+    data_df.columns = ['title','artist','timestamp']
     driver.close()
     return(data_df)
+
+a = scrape_cbc_weblogs('nightstream')
 
 # initial spotify enable
 import spotipy
 import spotipy.util as util
 import os
 
-os.environ["SPOTIPY_CLIENT_ID"] = '03de3dd701084c42852155a92f0e92db'
-os.environ["SPOTIPY_CLIENT_SECRET"] = "xx"
-os.environ["SPOTIPY_REDIRECT_URI"] = 'http://localhost:8888/callback/'
+#os.environ["SPOTIPY_CLIENT_ID"] = '03de3dd701084c42852155a92f0e92db'
+#os.environ["SPOTIPY_CLIENT_SECRET"] = "xx"
+#os.environ["SPOTIPY_REDIRECT_URI"] = 'http://localhost:8888/callback/'
 
 #first time giving this scope you will need to input the url from your browser!!
-token = util.prompt_for_user_token('kgsoloman5k',scope = 'playlist-modify-public')
+#token = util.prompt_for_user_token('kgsoloman5k',scope = 'playlist-modify-public')
 
 
 #find all of the spotify song ids for the scraped songs from cbc
