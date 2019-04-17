@@ -12,50 +12,75 @@ Created on Wed Mar 20 19:44:01 2019
 #test
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options  
+from difflib import SequenceMatcher
 import pandas as pd
 
-chrome_options = Options()
-chrome_options.add_argument('--headless')
+#function to add some string distance help for misspellings of program names
+def similar(a,b):
+    return SequenceMatcher(None, a, b).ratio()
 
-driver = webdriver.Chrome(options = chrome_options)
-driver.get('https://www.cbcmusic.ca/on-air/playlogs')
+# main function that creates a data frame of the program on cbc's tracklist
+def scrape_cbc_weblogs(program_name):
+    chrome_options = Options()
+    chrome_options.add_argument('--headless')
+    
+    driver = webdriver.Chrome(options = chrome_options)
+    driver.get('https://www.cbcmusic.ca/on-air/playlogs')
+    
+    #click on the specified program name
+    elem = driver.find_elements_by_class_name('playlog__programs__program__title')
+    prog_names_list = list()
+    for i in range(len(elem)):
+        if(elem[i].text != ''):
+            prog_names_list.append(elem[i].text.lower())
+            
+    #if the input is not an exact match will find the closest distance program name
+    try:        
+        i = prog_names_list.index(program_name.lower())
+    except ValueError:
+        prog_names_list = pd.DataFrame(prog_names_list)
+        prog_names_list.columns =['program']
+        prog_names_list['ratio'] = [similar(program_name,i) for i in prog_names_list['program']]
+        if prog_names_list['ratio'].max() >= .5:
+            i = prog_names_list['ratio'].idxmax()
+        else:
+            print('INPUT ERROR:\nprogram name does not match any known program. check input\nINPUT ERROR')
+            return
 
-#click on nightstream element
-# CHANGING THE NUMBER IN LI[X] WILL CHANGE WHICH SHOW IS CLICKED
-# set up a loop to append all numbers in order to capture all shows -- how to capture the show name??
-elem = driver.find_element_by_xpath('//*[@id="Playlog"]/div[5]/ul/li[7]/div[1]/div[2]/div/button').click()
-
-#pull all elements (composer,title,artist,album)
-# clean them up to just get the title/artist pairs
-
-elem = driver.find_elements_by_class_name('playlog__programs__program__data')
-#prob need to add a show name field once we start pulling other than nightstream
-data_list = list()
-for i in range(len(elem)):
-    if(elem[i].text != ''):
-        data_list.append(elem[i].text)
-        
-elem = driver.find_elements_by_class_name('playlog__programs__program__property__name')
-
-data_cat_list = list()
-for i in range(len(elem)):
-    if(elem[i].text != ''):
-        data_cat_list.append(elem[i].text)
-        
-data_df = pd.concat([pd.DataFrame(data_list),pd.DataFrame(data_cat_list)],axis=1)
-data_df.columns = ['song_attr','attr_type']
-
-data_df = data_df.drop(data_df[data_df.attr_type == 'Composer'].index)
-data_df = data_df.drop(data_df[data_df.attr_type == 'Album'].index)
-
-song_title_list = data_df.drop(data_df[data_df.attr_type == 'Artist'].index).drop(columns = 'attr_type').reset_index(drop = True)
-song_artist_list = data_df.drop(data_df[data_df.attr_type == 'Title'].index).drop(columns = 'attr_type').reset_index(drop = True)
-
-data_df = pd.concat([song_title_list,song_artist_list],axis=1)
-data_df.columns = ['title','artist']
-
-driver.close()
-
+    
+    elem = driver.find_element_by_xpath('//*[@id="Playlog"]/div[5]/ul/li[{}]/div[1]/div[2]/div/button'.format(i+1)).click()
+    
+    #pull all elements (composer,title,artist,album)
+    # clean them up to just get the title/artist pairs
+    
+    elem = driver.find_elements_by_class_name('playlog__programs__program__data')
+    #prob need to add a show name field once we start pulling other than nightstream
+    data_list = list()
+    for i in range(len(elem)):
+        if(elem[i].text != ''):
+            data_list.append(elem[i].text)
+            
+    elem = driver.find_elements_by_class_name('playlog__programs__program__property__name')
+    
+    data_cat_list = list()
+    for i in range(len(elem)):
+        if(elem[i].text != ''):
+            data_cat_list.append(elem[i].text)
+            
+    data_df = pd.concat([pd.DataFrame(data_list),pd.DataFrame(data_cat_list)],axis=1)
+    data_df.columns = ['song_attr','attr_type']
+    
+    data_df = data_df.drop(data_df[data_df.attr_type == 'Composer'].index)
+    data_df = data_df.drop(data_df[data_df.attr_type == 'Album'].index)
+    
+    song_title_list = data_df.drop(data_df[data_df.attr_type == 'Artist'].index).drop(columns = 'attr_type').reset_index(drop = True)
+    song_artist_list = data_df.drop(data_df[data_df.attr_type == 'Title'].index).drop(columns = 'attr_type').reset_index(drop = True)
+    
+    data_df = pd.concat([song_title_list,song_artist_list],axis=1)
+    data_df.columns = ['title','artist']
+    
+    driver.close()
+    return(data_df)
 
 # initial spotify enable
 import spotipy
