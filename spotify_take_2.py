@@ -76,8 +76,7 @@ def scrape_cbc_weblogs(program_name):
     
     song_title_list = data_df.drop(data_df[data_df.attr_type == 'Artist'].index).drop(columns = 'attr_type').reset_index(drop = True)
     song_artist_list = data_df.drop(data_df[data_df.attr_type == 'Title'].index).drop(columns = 'attr_type').reset_index(drop = True)
-    
-    elem = driver.find_elements_by_xpath('//*[contains(concat( " ", @class, " " ), concat( " ", "playlog__programs__program__broadcasttime", " " ))]')
+    elem = driver.find_elements_by_class_name('playlog__programs__program__broadcasttime')
     #times come in with poor formatting need to adjust into a full datetime
     times_list = list()
     for i in range(len(elem)):
@@ -144,6 +143,7 @@ def add_songs_to_playlist(username, playlist_name, df):
     #get playlist id
     playlist_results = spotify.user_playlists(username)
     playlist_id_update = ''
+    #pull first instance of playlist match
     for i in range(0,len(playlist_results['items'])):
         if playlist_results['items'][i]['name'] == playlist_name:
             playlist_id_update = playlist_results['items'][i]['id']
