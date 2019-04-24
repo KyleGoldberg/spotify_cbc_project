@@ -7,6 +7,8 @@ https://www.cbcmusic.ca/robots.txt
 Following the rules outlined in the below link, we are good to go.
 http://www.robotstxt.org/robotstxt.html
 
+Ensure to create a file config.py with your spotify client id and spotify client secret as "api_key" and "api_secret"
+
 The script then follows this path ->
 *Initial Work:*
 Scrape the artist/track name from the desired cbc radio 2 program ->
