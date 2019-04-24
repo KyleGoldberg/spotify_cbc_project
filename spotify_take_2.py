@@ -15,6 +15,11 @@ from selenium.webdriver.chrome.options import Options
 from difflib import SequenceMatcher
 import pandas as pd
 from datetime import datetime
+import spotipy
+import spotipy.util as util
+import os
+import config
+import sqlite3
 
 #function to add some string distance help for misspellings of program names
 def similar(a,b):
@@ -71,11 +76,10 @@ def scrape_cbc_weblogs(program_name):
     data_df = pd.concat([pd.DataFrame(data_list),pd.DataFrame(data_cat_list)],axis=1)
     data_df.columns = ['song_attr','attr_type']
     
-    data_df = data_df.drop(data_df[data_df.attr_type == 'Composer'].index)
-    data_df = data_df.drop(data_df[data_df.attr_type == 'Album'].index)
-    
-    song_title_list = data_df.drop(data_df[data_df.attr_type == 'Artist'].index).drop(columns = 'attr_type').reset_index(drop = True)
-    song_artist_list = data_df.drop(data_df[data_df.attr_type == 'Title'].index).drop(columns = 'attr_type').reset_index(drop = True)
+    song_album_list = data_df.drop(data_df[data_df.attr_type != 'Album'].index).drop(columns = 'attr_type').reset_index(drop = True)
+    song_title_list = data_df.drop(data_df[data_df.attr_type != 'Title'].index).drop(columns = 'attr_type').reset_index(drop = True)
+    song_artist_list = data_df.drop(data_df[data_df.attr_type != 'Artist'].index).drop(columns = 'attr_type').reset_index(drop = True)
+
     elem = driver.find_elements_by_class_name('playlog__programs__program__broadcasttime')
     #times come in with poor formatting need to adjust into a full datetime
     times_list = list()
@@ -94,30 +98,28 @@ def scrape_cbc_weblogs(program_name):
             times_list.append(app)
     times_list = pd.DataFrame(times_list)
     times_list.columns = ['timestamp']
-    data_df = pd.concat([song_title_list,song_artist_list,times_list],axis=1)
-    data_df.columns = ['title','artist','timestamp']
+    prog_name_list = [program_name] * len(times_list)
+    prog_name_list = pd.DataFrame(prog_name_list)
+    data_df = pd.concat([song_title_list,song_artist_list,song_album_list,times_list,prog_name_list],axis=1)
+    data_df.columns = ['title','artist','album','timestamp','program_name']
     driver.close()
     return(data_df)
 
-a = scrape_cbc_weblogs('nightstream')
+data_df = scrape_cbc_weblogs('nightstream')
 
 # initial spotify enable
-import spotipy
-import spotipy.util as util
-import os
-
-#os.environ["SPOTIPY_CLIENT_ID"] = '03de3dd701084c42852155a92f0e92db'
-#os.environ["SPOTIPY_CLIENT_SECRET"] = "xx"
-#os.environ["SPOTIPY_REDIRECT_URI"] = 'http://localhost:8888/callback/'
-
-#first time giving this scope you will need to input the url from your browser!!
-#token = util.prompt_for_user_token('kgsoloman5k',scope = 'playlist-modify-public')
+#first time giving this scope you will need to input the url from your browser!! and uncomment the spotify redirect uri var
+def get_spotify_token(username):
+    token = util.prompt_for_user_token(username,client_id = config.api_key, client_secret = config.api_secret,
+                                       redirect_uri ='http://localhost:8888/callback/', scope = 'playlist-modify-public')
+    return(token)
+    
 
 
 #find all of the spotify song ids for the scraped songs from cbc
 # returns no_id_found if there is not a close enough match from the scrape --potential to add in logic to use fuzzy matching and artist only calls
-def get_spotify_ids(track_name = '', artist_name = ''):
-    token = util.prompt_for_user_token('kgsoloman5k',scope = 'playlist-modify-public')
+def get_spotify_ids(track_name = '', artist_name = '',username):
+    token = get_spotify_token(username)
     spotify = spotipy.Spotify(auth = token)
     query = ''
     if track_name != '':
@@ -134,11 +136,44 @@ def get_spotify_ids(track_name = '', artist_name = ''):
         ret = 'no_id_found'
     return(ret)
 
+
     
 data_df['spotify_id'] = [get_spotify_ids(x,y) for x,y in zip(data_df['title'],data_df['artist'])]
 
+def initialize_sqlite_tables(wd):
+    os.chdir(wd)
+    sqlite_file = 'cbc_spotify_project_db.sqlite'
+    table_name1 = 'all_playlogs'
+    table_name2 = 'mornings_masterlist'
+    table_name3 = 'shift_masterlist'
+    table_name4 = 'drive_masterlist'
+    table_name5 = 'afterdark_masterlist'
+    col_spotify_id = 'spotify_id varchar(50)'
+    col_dttm = 'dttm datetime2'
+    col_title = 'title varchar(255)'
+    col_artist = 'artist varchar(255)'
+    col_album = 'album varchar(255)'
+    col_program_name = 'program_name varchar(50)'
+    col_added = 'track_added_dttm datetime2'
+    
+    conn = sqlite3.connect(sqlite_file)
+    c = conn.cursor()
+    
+    c.execute('CREATE TABLE {tn} ({si},{dt},{ti},{ar},{al},{pr})'\
+              .format(tn=table_name1,si=col_spotify_id,dt=col_dttm,ti=col_title,ar=col_artist,al=col_album,pr=col_program_name))
+    
+    c.execute('CREATE TABLE {tn} ({si} PRIMARY KEY,{ad})'.format(tn=table_name2,si=col_spotify_id,ad=col_added))
+    c.execute('CREATE TABLE {tn} ({si} PRIMARY KEY,{ad})'.format(tn=table_name3,si=col_spotify_id,ad=col_added))
+    c.execute('CREATE TABLE {tn} ({si} PRIMARY KEY,{ad})'.format(tn=table_name4,si=col_spotify_id,ad=col_added))
+    c.execute('CREATE TABLE {tn} ({si} PRIMARY KEY,{ad})'.format(tn=table_name5,si=col_spotify_id,ad=col_added))
+    
+    conn.commit()
+    conn.close()
+    
+initialize_sqlite_tables('C:/Users/KG/Desktop/spotify_cbc_project-master')
+
 def add_songs_to_playlist(username, playlist_name, df):
-    token = util.prompt_for_user_token(username,scope = 'playlist-modify-public')
+    token = get_spotify_token(username)
     spotify = spotipy.Spotify(auth = token)
     #get playlist id
     playlist_results = spotify.user_playlists(username)
@@ -153,5 +188,4 @@ def add_songs_to_playlist(username, playlist_name, df):
 
 
 add_songs_to_playlist('kgsoloman5k','cbc_radio_2_nightstream',data_df)
-
     
