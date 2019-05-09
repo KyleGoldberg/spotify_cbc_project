@@ -32,21 +32,15 @@ def scrape_cbc_weblogs_afterdark():
     driver.get('https://www.cbc.ca/listen/live-radio/2-5329-afterdark') #running twice avoids popup
     elem = driver.find_element_by_class_name('playlistItem').click()
     
-    elem = driver.find_elements_by_class_name('ule-playlog__track__item__label')
-    labels_list = list()
-    for i in range(len(elem)):
-        if(elem[i].text != ''):
-            labels_list.append(elem[i].text.lower())
-            
-    elem = driver.find_elements_by_class_name('ule-playlog__track__item__value')
-    values_list = list()
-    for i in range(len(elem)):
-        if(elem[i].text != ''):
-            values_list.append(elem[i].text.lower())
+    # get list of tracks and attributes
     
-     elem = driver.find_elements_by_class_name('ule-playlog__track')
+    elem = driver.find_elements_by_class_name('ule-playlog__track')
      
-     data_df = pd.DataFrame(data = None, columns = ['playtime','composer','title','artist','album'])
+    driver.close()
+    
+    #parse track objects into dataframe
+     
+    data_df = pd.DataFrame(data = None, columns = ['playtime','composer','title','artist','album'])
     
     for i in range(len(elem)):
         obj = elem[i].text.split('\n')
@@ -70,9 +64,26 @@ def scrape_cbc_weblogs_afterdark():
             c = obj.index('Album')+1
             album = obj[c].lower()
         except ValueError:
-            album = 'no_album_listed'
-            
-        data_df = data_df.append({'playtime':playtime,'composer':comp,'title':title,'artist':artist,'album':album},ignore_index = True)
+            album = 'no_album_listed'  
+        data_df = data_df.append({'playtime':playtime,'composer':comp,'title':title
+                                  ,'artist':artist,'album':album},ignore_index = True)
+    
+        
+    # parse out poorly formatted timestamps into good ones
+    
+    for i in range(len(data_df['playtime'])):
+        if(data_df['playtime'][i] != ''):
+            if(len(data_df['playtime'][i])==3):
+                z = '0'+data_df['playtime'][i][:1]+':00'+data_df['playtime'][i][1:3].replace('.','')
+            elif(len(data_df['playtime'][i]) == 4):
+                z = data_df['playtime'][i][:2]+':00'+data_df['playtime'][i][2:4].replace('.','')
+            elif(len(data_df['playtime'][i]) == 6):
+                z = '0'+data_df['playtime'][i].replace('.','')
+            else:
+                z = data_df['playtime'][i].replace('.','')
+            z2 = str(datetime.today().strftime('%Y-%m-%d')) +' '+ z
+            app = datetime.strptime(z2.upper(),'%Y-%m-%d %I:%M %p').strftime('%Y-%m-%d %H:%M:%S')
+            data_df['playtime'][i] = app
     
     #still need to fix timestamps
 
