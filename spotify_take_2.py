@@ -26,86 +26,55 @@ def similar(a,b):
     return SequenceMatcher(None, a, b).ratio()
 
 # main function that creates a data frame of the program on cbc's tracklist
-def scrape_cbc_weblogs(program_name):
-    chrome_options = Options()
-    chrome_options.add_argument('--headless')
+def scrape_cbc_weblogs_afterdark():  
+    driver = webdriver.Chrome()
+    driver.get('https://www.cbc.ca/listen/live-radio/2-5329-afterdark')
+    driver.get('https://www.cbc.ca/listen/live-radio/2-5329-afterdark') #running twice avoids popup
+    elem = driver.find_element_by_class_name('playlistItem').click()
     
-    driver = webdriver.Chrome(options = chrome_options)
-    driver.get('https://www.cbcmusic.ca/on-air/playlogs')
-    
-    #click on the specified program name
-    elem = driver.find_elements_by_class_name('playlog__programs__program__title')
-    prog_names_list = list()
+    elem = driver.find_elements_by_class_name('ule-playlog__track__item__label')
+    labels_list = list()
     for i in range(len(elem)):
         if(elem[i].text != ''):
-            prog_names_list.append(elem[i].text.lower())
+            labels_list.append(elem[i].text.lower())
             
-    #if the input is not an exact match will find the closest distance program name
-    try:        
-        i = prog_names_list.index(program_name.lower())
-    except ValueError:
-        prog_names_list = pd.DataFrame(prog_names_list)
-        prog_names_list.columns =['program']
-        prog_names_list['ratio'] = [similar(program_name,i) for i in prog_names_list['program']]
-        if prog_names_list['ratio'].max() >= .5:
-            i = prog_names_list['ratio'].idxmax()
-        else:
-            print('INPUT ERROR:\nprogram name does not match any known program. check input\nINPUT ERROR')
-            return
-
-    
-    elem = driver.find_element_by_xpath('//*[@id="Playlog"]/div[5]/ul/li[{}]/div[1]/div[2]/div/button'.format(i+1)).click()
-    
-    #pull all elements (composer,title,artist,album)
-    # clean them up to just get the title/artist pairs
-    
-    elem = driver.find_elements_by_class_name('playlog__programs__program__data')
-    #prob need to add a show name field once we start pulling other than nightstream
-    data_list = list()
+    elem = driver.find_elements_by_class_name('ule-playlog__track__item__value')
+    values_list = list()
     for i in range(len(elem)):
         if(elem[i].text != ''):
-            data_list.append(elem[i].text)
+            values_list.append(elem[i].text.lower())
+    
+     elem = driver.find_elements_by_class_name('ule-playlog__track')
+     
+     data_df = pd.DataFrame(data = None, columns = ['playtime','composer','title','artist','album'])
+    
+    for i in range(len(elem)):
+        obj = elem[i].text.split('\n')
+        playtime = obj[0]
+        try:
+            c = obj.index('Composer')+1
+            comp = obj[c].lower()
+        except ValueError:
+            comp = 'no_composer_listed'
+        try:
+            c = obj.index('Artist')+1
+            artist = obj[c].lower()
+        except ValueError:
+            artist = 'no_artist_listed'
+        try:
+            c = obj.index('Title')+1
+            title = obj[c].lower()
+        except ValueError:
+            title = 'no_title_listed'   
+        try:
+            c = obj.index('Album')+1
+            album = obj[c].lower()
+        except ValueError:
+            album = 'no_album_listed'
             
-    elem = driver.find_elements_by_class_name('playlog__programs__program__property__name')
+        data_df = data_df.append({'playtime':playtime,'composer':comp,'title':title,'artist':artist,'album':album},ignore_index = True)
     
-    data_cat_list = list()
-    for i in range(len(elem)):
-        if(elem[i].text != ''):
-            data_cat_list.append(elem[i].text)
-            
-    data_df = pd.concat([pd.DataFrame(data_list),pd.DataFrame(data_cat_list)],axis=1)
-    data_df.columns = ['song_attr','attr_type']
-    
-    song_album_list = data_df.drop(data_df[data_df.attr_type != 'Album'].index).drop(columns = 'attr_type').reset_index(drop = True)
-    song_title_list = data_df.drop(data_df[data_df.attr_type != 'Title'].index).drop(columns = 'attr_type').reset_index(drop = True)
-    song_artist_list = data_df.drop(data_df[data_df.attr_type != 'Artist'].index).drop(columns = 'attr_type').reset_index(drop = True)
-
-    elem = driver.find_elements_by_class_name('playlog__programs__program__broadcasttime')
-    #times come in with poor formatting need to adjust into a full datetime
-    times_list = list()
-    for i in range(len(elem)):
-        if(elem[i].text != ''):
-            if(len(elem[i].text)==3):
-                z = '0'+elem[i].text[:1]+':00'+elem[i].text[1:3]
-            elif(len(elem[i].text) == 4):
-                z = elem[i].text[:2]+':00'+elem[i].text[2:4]
-            elif(len(elem[i].text) == 6):
-                z = '0'+elem[i].text
-            else:
-                z = elem[i].text
-            z2 = str(datetime.today().strftime('%Y-%m-%d')) +' '+ z
-            app = datetime.strptime(z2.upper(),'%Y-%m-%d %I:%M%p').strftime('%Y-%m-%d %H:%M:%S')
-            times_list.append(app)
-    times_list = pd.DataFrame(times_list)
-    times_list.columns = ['timestamp']
-    prog_name_list = [program_name] * len(times_list)
-    prog_name_list = pd.DataFrame(prog_name_list)
-    data_df = pd.concat([song_title_list,song_artist_list,song_album_list,times_list,prog_name_list],axis=1)
-    data_df.columns = ['title','artist','album','timestamp','program_name']
-    driver.close()
-    return(data_df)
-
-data_df = scrape_cbc_weblogs('nightstream')
+    #still need to fix timestamps
 
 # initial spotify enable
 #first time giving this scope you will need to input the url from your browser!! and uncomment the spotify redirect uri var
@@ -188,4 +157,89 @@ def add_songs_to_playlist(username, playlist_name, df):
 
 
 add_songs_to_playlist('kgsoloman5k','cbc_radio_2_nightstream',data_df)
+
+
+
+#OBSOLETE DUE TO WEBSITE CHANGES
+
+#def scrape_cbc_weblogs(program_name):
+#    chrome_options = Options()
+#    chrome_options.add_argument('--headless')
+#    
+#    driver = webdriver.Chrome(options = chrome_options)
+#    driver.get('https://www.cbcmusic.ca/on-air/playlogs')
+#    
+#    #click on the specified program name
+#    elem = driver.find_elements_by_class_name('playlog__programs__program__title')
+#    prog_names_list = list()
+#    for i in range(len(elem)):
+#        if(elem[i].text != ''):
+#            prog_names_list.append(elem[i].text.lower())
+#            
+#    #if the input is not an exact match will find the closest distance program name
+#    try:        
+#        i = prog_names_list.index(program_name.lower())
+#    except ValueError:
+#        prog_names_list = pd.DataFrame(prog_names_list)
+#        prog_names_list.columns =['program']
+#        prog_names_list['ratio'] = [similar(program_name,i) for i in prog_names_list['program']]
+#        if prog_names_list['ratio'].max() >= .5:
+#            i = prog_names_list['ratio'].idxmax()
+#        else:
+#            print('INPUT ERROR:\nprogram name does not match any known program. check input\nINPUT ERROR')
+#            return
+#
+#    
+#    elem = driver.find_element_by_xpath('//*[@id="Playlog"]/div[5]/ul/li[{}]/div[1]/div[2]/div/button'.format(i+1)).click()
+#    
+#    #pull all elements (composer,title,artist,album)
+#    # clean them up to just get the title/artist pairs
+#    
+#    elem = driver.find_elements_by_class_name('playlog__programs__program__data')
+#    #prob need to add a show name field once we start pulling other than nightstream
+#    data_list = list()
+#    for i in range(len(elem)):
+#        if(elem[i].text != ''):
+#            data_list.append(elem[i].text)
+#            
+#    elem = driver.find_elements_by_class_name('playlog__programs__program__property__name')
+#    
+#    data_cat_list = list()
+#    for i in range(len(elem)):
+#        if(elem[i].text != ''):
+#            data_cat_list.append(elem[i].text)
+#            
+#    data_df = pd.concat([pd.DataFrame(data_list),pd.DataFrame(data_cat_list)],axis=1)
+#    data_df.columns = ['song_attr','attr_type']
+#    
+#    song_album_list = data_df.drop(data_df[data_df.attr_type != 'Album'].index).drop(columns = 'attr_type').reset_index(drop = True)
+#    song_title_list = data_df.drop(data_df[data_df.attr_type != 'Title'].index).drop(columns = 'attr_type').reset_index(drop = True)
+#    song_artist_list = data_df.drop(data_df[data_df.attr_type != 'Artist'].index).drop(columns = 'attr_type').reset_index(drop = True)
+#
+#    elem = driver.find_elements_by_class_name('playlog__programs__program__broadcasttime')
+#    #times come in with poor formatting need to adjust into a full datetime
+#    times_list = list()
+#    for i in range(len(elem)):
+#        if(elem[i].text != ''):
+#            if(len(elem[i].text)==3):
+#                z = '0'+elem[i].text[:1]+':00'+elem[i].text[1:3]
+#            elif(len(elem[i].text) == 4):
+#                z = elem[i].text[:2]+':00'+elem[i].text[2:4]
+#            elif(len(elem[i].text) == 6):
+#                z = '0'+elem[i].text
+#            else:
+#                z = elem[i].text
+#            z2 = str(datetime.today().strftime('%Y-%m-%d')) +' '+ z
+#            app = datetime.strptime(z2.upper(),'%Y-%m-%d %I:%M%p').strftime('%Y-%m-%d %H:%M:%S')
+#            times_list.append(app)
+#    times_list = pd.DataFrame(times_list)
+#    times_list.columns = ['timestamp']
+#    prog_name_list = [program_name] * len(times_list)
+#    prog_name_list = pd.DataFrame(prog_name_list)
+#    data_df = pd.concat([song_title_list,song_artist_list,song_album_list,times_list,prog_name_list],axis=1)
+#    data_df.columns = ['title','artist','album','timestamp','program_name']
+#    driver.close()
+#    return(data_df)
+#
+#data_df = scrape_cbc_weblogs('nightstream')
     
